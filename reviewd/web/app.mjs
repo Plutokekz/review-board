@@ -12,8 +12,11 @@ async function api(path, opts) {
 
 function route() {
   const m = location.pathname.match(/^\/s\/(.+)$/);
-  if (m) renderReview(decodeURIComponent(m[1]));
-  else renderDashboard();
+  const p = m ? renderReview(decodeURIComponent(m[1])) : renderDashboard();
+  Promise.resolve(p).catch((err) => {
+    document.querySelector('main').innerHTML =
+      `<p>⚠️ Could not load: ${escapeHtml(String(err && err.message || err))}. Try reloading.</p>`;
+  });
 }
 
 async function renderDashboard() {
@@ -36,6 +39,7 @@ async function renderDashboard() {
 
 let annotations = [];
 let pendingAnchor = null;
+let openBox = null;
 
 async function renderReview(id) {
   $('#dashboard').classList.add('hidden');
@@ -43,6 +47,7 @@ async function renderReview(id) {
   el.classList.remove('hidden');
   annotations = [];
   pendingAnchor = null;
+  openBox = null;
   const sess = await api(`/api/sessions/${encodeURIComponent(id)}`);
   $('#subtitle').textContent = `${sess.title} — ${sess.branch}`;
 
@@ -65,9 +70,14 @@ async function renderReview(id) {
 
   renderDiff(sess.diff, 'line-by-line');
   $('#refresh').onclick = () => renderReview(id);
-  $('#unified').onclick = () => renderDiff(sess.diff, 'line-by-line');
-  $('#split').onclick = () => renderDiff(sess.diff, 'side-by-side');
+  $('#unified').onclick = () => { setActive('unified'); renderDiff(sess.diff, 'line-by-line'); };
+  $('#split').onclick = () => { setActive('split'); renderDiff(sess.diff, 'side-by-side'); };
   $('#finish').onclick = () => finish(id);
+}
+
+function setActive(which) {
+  document.querySelector('#unified').classList.toggle('primary', which === 'unified');
+  document.querySelector('#split').classList.toggle('primary', which === 'split');
 }
 
 function renderDiff(diff, format) {
@@ -117,6 +127,7 @@ function wireDiff() {
 }
 
 function openCommentBox(tr, anchor) {
+  if (openBox) { openBox.remove(); openBox = null; } // one open unsaved box at a time
   const range = anchor.startLine === anchor.endLine
     ? `${anchor.startLine}` : `${anchor.startLine}-${anchor.endLine}`;
   const box = document.createElement('div');
@@ -127,19 +138,26 @@ function openCommentBox(tr, anchor) {
     <label><input type="radio" name="t" value="comment"> 💬 Comment</label>
     <textarea placeholder="Your note…"></textarea>
     <button class="save primary">Save</button>`;
+  // Insert as a valid full-width table row (not a bare <div> sibling of <tr>).
+  const holderRow = document.createElement('tr');
+  const cell = document.createElement('td');
+  cell.colSpan = 99;
+  cell.appendChild(box);
+  holderRow.appendChild(cell);
+  tr.after(holderRow);
+  openBox = holderRow; // track the ROW so removal takes the whole row
   box.querySelector('.save').onclick = () => {
     annotations.push({
       anchor,
       type: box.querySelector('input[name=t]:checked').value,
       body: box.querySelector('textarea').value,
     });
-    const ta = box.querySelector('textarea');
-    ta.disabled = true;
+    box.querySelector('textarea').disabled = true;
     const btn = box.querySelector('.save');
     btn.textContent = 'Saved ✓';
     btn.disabled = true;
+    openBox = null; // saved box stays in the DOM; it is no longer the "open unsaved" one
   };
-  tr.after(box);
 }
 
 async function finish(id) {

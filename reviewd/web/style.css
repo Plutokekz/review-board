@@ -9,7 +9,7 @@ a { color: inherit; }
 .badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid #8886; }
 .add { color: #2da44e; } .del { color: #cf222e; }
 .d2h-code-line { cursor: pointer; }
-.d2h-code-line.rb-selected { background: #6cf3 !important; }
+.d2h-code-side-line { cursor: pointer; }
 .comment-box { border: 1px solid #8886; border-radius: 8px; padding: 10px; margin: 6px 0; }
 .comment-box textarea { width: 100%; min-height: 54px; font: inherit; }
 .toolbar { position: sticky; top: 0; background: Canvas; padding: 10px 0; display: flex; gap: 10px; align-items: center; z-index: 5; }
