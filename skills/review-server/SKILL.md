@@ -11,9 +11,10 @@ Manage the shared `reviewd` daemon (default `http://localhost:7654`).
 
 **Binary:** built on first use to `~/.cache/review-board/reviewd` from `${CLAUDE_PLUGIN_ROOT}/reviewd`.
 
-Run the requested action (`$ARGUMENTS`, default `status`):
+Determine the requested action from the user's input — `start`, `stop`, or `status` (default `status`) — and set ACTION in the script below before running it.
 
 ```bash
+ACTION="status"        # ← replace with the requested action: start | stop | status
 BIN="$HOME/.cache/review-board/reviewd"
 PORT="${REVIEW_BOARD_PORT:-7654}"
 URL="http://127.0.0.1:$PORT"
@@ -26,7 +27,7 @@ ensure_binary() {
 }
 is_up() { curl -sf "$URL/api/sessions" >/dev/null 2>&1; }
 
-case "${1:-status}" in
+case "$ACTION" in
   start)
     ensure_binary
     if is_up; then echo "already running at $URL"; else
@@ -37,7 +38,7 @@ case "${1:-status}" in
   stop)
     pkill -f "$BIN --port $PORT" && echo "stopped" || echo "not running" ;;
   status)
-    if is_up; then echo "up: $(curl -s "$URL/api/sessions" | grep -o '"id"' | wc -l) session(s) at $URL"; else echo "down"; fi ;;
-  *) echo "usage: /review-server [start|stop|status]" ;;
+    if is_up; then echo "up: $(curl -s "$URL/api/sessions" | jq 'length') session(s) at $URL"; else echo "down"; fi ;;
+  *) echo "usage: /review-server [start|stop|status]"; exit 1 ;;
 esac
 ```
