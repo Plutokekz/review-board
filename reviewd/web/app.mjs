@@ -4,6 +4,26 @@ import { parseDiffFiles } from '/lib/diff-parse.mjs';
 
 const $ = (sel) => document.querySelector(sel);
 
+const THEMES = ['auto', 'light', 'dark'];
+let theme = 'auto';
+try { theme = localStorage.getItem('rb-theme') || 'auto'; } catch (e) { /* storage may be blocked */ }
+
+function applyTheme() {
+  document.documentElement.style.colorScheme = theme === 'auto' ? '' : theme;
+  document.querySelectorAll('.d2h-wrapper').forEach((w) => {
+    w.classList.remove('d2h-light-color-scheme', 'd2h-dark-color-scheme', 'd2h-auto-color-scheme');
+    w.classList.add(`d2h-${theme}-color-scheme`);
+  });
+  const btn = document.getElementById('theme');
+  if (btn) btn.textContent = `Theme: ${theme[0].toUpperCase()}${theme.slice(1)}`;
+}
+
+function cycleTheme() {
+  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  try { localStorage.setItem('rb-theme', theme); } catch (e) { /* storage may be blocked */ }
+  applyTheme();
+}
+
 async function api(path, opts) {
   const res = await fetch(path, opts);
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
@@ -73,7 +93,7 @@ async function renderReview(id) {
   const el = $('#review');
   el.classList.remove('hidden');
   annotations = [];
-  pendingAnchor = null;
+  sel = null;
   openBox = null;
   const sess = await api(`/api/sessions/${encodeURIComponent(id)}`);
   $('#subtitle').textContent = `${sess.title} — ${sess.branch}`;
@@ -108,7 +128,7 @@ function setActive(which) {
 }
 
 function renderDiff(diff, format) {
-  $('#diff').innerHTML = Diff2Html.html(diff, { drawFileList: false, matching: 'lines', outputFormat: format, colorScheme: 'auto' });
+  $('#diff').innerHTML = Diff2Html.html(diff, { drawFileList: false, matching: 'lines', outputFormat: format, colorScheme: theme });
   wireDiff();
 }
 
@@ -207,5 +227,8 @@ function escapeHtml(s) {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+const themeBtn = document.getElementById('theme');
+if (themeBtn) themeBtn.onclick = cycleTheme;
+applyTheme();
 window.addEventListener('popstate', route);
 route();
