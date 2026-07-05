@@ -28,7 +28,13 @@ git add -N -- :/ 2>/dev/null || true    # intent-to-add so NEW files show up in 
 if git diff --no-ext-diff --quiet "$BASE"; then echo "no changes vs $BASE — nothing to review"; exit 0; fi
 
 # --- ensure server (build on first use, start if down) ---
-if [ ! -x "$BIN" ]; then mkdir -p "$(dirname "$BIN")"; ( cd "${CLAUDE_PLUGIN_ROOT}/reviewd" && go build -o "$BIN" . ) || exit 1; fi
+if [ ! -x "$BIN" ]; then
+  mkdir -p "$(dirname "$BIN")"
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m); case "$ARCH" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; esac
+  curl -fsSL "https://github.com/Plutokekz/review-board/releases/latest/download/reviewd-${OS}-${ARCH}" -o "$BIN" 2>/dev/null && chmod +x "$BIN"
+  if [ ! -x "$BIN" ] && command -v go >/dev/null 2>&1; then ( cd "${CLAUDE_PLUGIN_ROOT}/reviewd" && go build -o "$BIN" . ); fi
+  [ -x "$BIN" ] || { echo "could not obtain reviewd (no prebuilt binary for $OS/$ARCH, and Go not installed)"; exit 1; }
+fi
 curl -sf "$URL/api/sessions" >/dev/null 2>&1 || { nohup "$BIN" --port "$PORT" >"$HOME/.cache/review-board/reviewd.log" 2>&1 & for i in 1 2 3 4 5; do sleep 0.4; curl -sf "$URL/api/sessions" >/dev/null 2>&1 && break; done; }
 
 # --- identity ---

@@ -9,7 +9,7 @@ allowed-tools: Bash
 
 Manage the shared `reviewd` daemon (default `http://localhost:7654`).
 
-**Binary:** built on first use to `~/.cache/review-board/reviewd` from `${CLAUDE_PLUGIN_ROOT}/reviewd`.
+**Binary:** on first use, downloaded from GitHub Releases for your platform to `~/.cache/review-board/reviewd` (or built from `${CLAUDE_PLUGIN_ROOT}/reviewd` with Go if no prebuilt binary matches).
 
 Determine the requested action from the user's input — `start`, `stop`, or `status` (default `status`) — and set ACTION in the script below before running it.
 
@@ -20,10 +20,17 @@ PORT="${REVIEW_BOARD_PORT:-7654}"
 URL="http://127.0.0.1:$PORT"
 
 ensure_binary() {
-  if [ ! -x "$BIN" ]; then
-    mkdir -p "$(dirname "$BIN")"
-    ( cd "${CLAUDE_PLUGIN_ROOT}/reviewd" && go build -o "$BIN" . ) || { echo "build failed (need Go)"; exit 1; }
+  [ -x "$BIN" ] && return 0
+  mkdir -p "$(dirname "$BIN")"
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  ARCH=$(uname -m); case "$ARCH" in x86_64|amd64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; esac
+  # 1) prefer a prebuilt release binary (no Go needed)
+  curl -fsSL "https://github.com/Plutokekz/review-board/releases/latest/download/reviewd-${OS}-${ARCH}" -o "$BIN" 2>/dev/null && chmod +x "$BIN"
+  # 2) fall back to building from source (needs Go)
+  if [ ! -x "$BIN" ] && command -v go >/dev/null 2>&1; then
+    ( cd "${CLAUDE_PLUGIN_ROOT}/reviewd" && go build -o "$BIN" . )
   fi
+  [ -x "$BIN" ] || { echo "could not obtain reviewd: no prebuilt binary for ${OS}/${ARCH} and Go is not installed"; exit 1; }
 }
 is_up() { curl -sf "$URL/api/sessions" >/dev/null 2>&1; }
 

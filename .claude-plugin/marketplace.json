@@ -1,0 +1,14 @@
+{
+  "name": "review-board",
+  "description": "GitHub-style multi-session code review for Claude Code.",
+  "owner": { "name": "Lukas Mahr", "email": "lukas@yousuckatprogramming.de" },
+  "plugins": [
+    {
+      "name": "review-board",
+      "description": "GitHub-style multi-session code review: annotate git diffs in the browser; Claude applies the requested changes.",
+      "version": "0.1.0",
+      "source": "./",
+      "author": { "name": "Lukas Mahr", "email": "lukas@yousuckatprogramming.de" }
+    }
+  ]
+}

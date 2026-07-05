@@ -4,8 +4,25 @@ A Claude Code plugin for **GitHub-style code review** of git changes. One shared
 Go server hosts many review sessions; you annotate diffs in the browser and Claude applies
 your requested changes.
 
+## Installation
+
+**Via the plugin marketplace (recommended):**
+```
+/plugin marketplace add Plutokekz/review-board
+/plugin install review-board
+```
+
+**Or load a local checkout:**
+```
+git clone https://github.com/Plutokekz/review-board
+claude --plugin-dir review-board
+```
+
+On first `/review`, the `reviewd` server binary is downloaded from GitHub Releases for your
+platform (no Go needed); if none matches, it builds from source (needs Go 1.23+).
+
 ## Prerequisites
-- **Go 1.23+** (builds the server binary on first use)
+- **Go 1.23+** — only needed if no prebuilt binary matches your platform (the server is otherwise downloaded from Releases)
 - **git**, **jq**, **curl**, **uuidgen** (used by the `/review` skill)
 - A browser opener (`xdg-open`, `explorer.exe`, or `open`)
 
@@ -40,5 +57,6 @@ read pushed diffs or submit a review that Claude will then apply.
 ## Development
 - Server tests: `cd reviewd && go test ./...`
 - Frontend logic tests: `cd reviewd && node --test webtest/*.test.mjs`
+- Browser UI smoke test (needs Chromium): `bash scripts/ui-smoke.sh`
 
 Built test-first (TDD). `diff2html` is MIT-licensed and vendored under `reviewd/web/vendor/`.
