@@ -6,7 +6,9 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed all:web
@@ -14,9 +16,10 @@ var webFS embed.FS
 
 type Server struct {
 	store *Store
+	notif *notifier
 }
 
-func NewServer(store *Store) *Server { return &Server{store: store} }
+func NewServer(store *Store) *Server { return &Server{store: store, notif: newNotifier()} }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -122,16 +125,43 @@ func (s *Server) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.notif.publish(sess.ID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request) {
-	sess, ok := s.store.Get(r.PathValue("id"))
+	id := r.PathValue("id")
+	if secs := parseWait(r.URL.Query().Get("wait")); secs > 0 {
+		ch := s.notif.subscribe(id)
+		defer s.notif.unsubscribe(id, ch)
+		// Subscribe-before-read closes the submit-during-setup race.
+		if sess, ok := s.store.Get(id); ok && sess.Status != "submitted" {
+			select {
+			case <-ch:
+			case <-time.After(time.Duration(secs) * time.Second):
+			case <-r.Context().Done():
+				return
+			}
+		}
+	}
+	sess, ok := s.store.Get(id)
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": sess.Status, "review": sess.Review})
+}
+
+// parseWait clamps the ?wait= seconds to [0,600]; 0 (or invalid) means do not block.
+func parseWait(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	if n > 600 {
+		n = 600
+	}
+	return n
 }
 
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
