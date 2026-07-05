@@ -24,6 +24,7 @@ NAME=""              # override from first positional arg
 
 # --- ensure repo + changes ---
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo"; exit 1; }
+git add -N -- :/ 2>/dev/null || true    # intent-to-add so NEW files show up in the diff
 if git diff --no-ext-diff --quiet "$BASE"; then echo "no changes vs $BASE — nothing to review"; exit 0; fi
 
 # --- ensure server (build on first use, start if down) ---
@@ -34,6 +35,7 @@ curl -sf "$URL/api/sessions" >/dev/null 2>&1 || { nohup "$BIN" --port "$PORT" >"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 BRANCH="$(git branch --show-current)"
 ID="${NAME:-${CLAUDE_CODE_SESSION_ID:-$(uuidgen)}}"
+IDENC="$(jq -rn --arg s "$ID" '$s|@uri')"    # percent-encode id for use in URL paths
 TITLE="${NAME:-$(basename "$REPO_ROOT")} · ${BRANCH:-detached}"
 TS="$(date -Iseconds)"
 
@@ -47,7 +49,7 @@ jq -n --arg id "$ID" --arg title "$TITLE" --arg repo "$REPO_ROOT" \
   | curl -sf -X POST -H 'Content-Type: application/json' --data-binary @- "$URL/api/sessions" >/dev/null || { echo "push failed — is the server reachable at $URL ?"; rm -f "$DIFF_TMP"; exit 1; }
 rm -f "$DIFF_TMP"
 
-REVIEW_URL="$URL/s/$ID"
+REVIEW_URL="$URL/s/$IDENC"
 ( xdg-open "$REVIEW_URL" >/dev/null 2>&1 || explorer.exe "$REVIEW_URL" >/dev/null 2>&1 || open "$REVIEW_URL" >/dev/null 2>&1 ) &
 echo "Review open at $REVIEW_URL — annotate lines, then click Finish Review."
 echo "SESSION_ID=$ID"
@@ -63,12 +65,13 @@ printed above:
 ```bash
 URL="http://127.0.0.1:${REVIEW_BOARD_PORT:-7654}"
 ID="<SESSION_ID>"
+IDENC="$(jq -rn --arg s "$ID" '$s|@uri')"    # percent-encode id for use in URL paths
 for i in $(seq 1 400); do
-  STATUS="$(curl -sf "$URL/api/sessions/$ID/review" | jq -r '.status')"
+  STATUS="$(curl -sf "$URL/api/sessions/$IDENC/review" | jq -r '.status')"
   [ "$STATUS" = "submitted" ] && break
   sleep 3
 done
-curl -sf "$URL/api/sessions/$ID/review" | jq .
+curl -sf "$URL/api/sessions/$IDENC/review" | jq .
 ```
 
 If it never becomes `submitted`, tell the user the submission is durable — they can re-run

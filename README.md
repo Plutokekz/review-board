@@ -33,6 +33,10 @@ browser, and polls `GET /api/sessions/:id/review` until you submit. The server e
 web UI (`diff2html` + annotation) in a single binary; sessions persist under
 `~/.local/state/review-board/`.
 
+**Security:** `reviewd` binds `127.0.0.1` and has no authentication, so it's designed for
+single-user localhost use only — on a shared multi-user host, any other local user could
+read pushed diffs or submit a review that Claude will then apply.
+
 ## Development
 - Server tests: `cd reviewd && go test ./...`
 - Frontend logic tests: `cd reviewd && node --test webtest/*.test.mjs`
