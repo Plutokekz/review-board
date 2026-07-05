@@ -24,7 +24,7 @@ NAME=""              # override from first positional arg
 
 # --- ensure repo + changes ---
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo"; exit 1; }
-if git diff --quiet "$BASE"; then echo "no changes vs $BASE — nothing to review"; exit 0; fi
+if git diff --no-ext-diff --quiet "$BASE"; then echo "no changes vs $BASE — nothing to review"; exit 0; fi
 
 # --- ensure server (build on first use, start if down) ---
 if [ ! -x "$BIN" ]; then mkdir -p "$(dirname "$BIN")"; ( cd "${CLAUDE_PLUGIN_ROOT}/reviewd" && go build -o "$BIN" . ) || exit 1; fi
@@ -38,13 +38,14 @@ TITLE="${NAME:-$(basename "$REPO_ROOT")} · ${BRANCH:-detached}"
 TS="$(date -Iseconds)"
 
 # --- push (jq encodes the diff safely) ---
-git diff "$BASE" > /tmp/rb-diff.$$
+DIFF_TMP="$(mktemp)"
+git diff --no-ext-diff --no-color "$BASE" > "$DIFF_TMP"
 jq -n --arg id "$ID" --arg title "$TITLE" --arg repo "$REPO_ROOT" \
       --arg branch "$BRANCH" --arg base "$BASE" --arg createdAt "$TS" --arg updatedAt "$TS" \
-      --rawfile diff /tmp/rb-diff.$$ \
+      --rawfile diff "$DIFF_TMP" \
       '{id:$id,title:$title,repo:$repo,branch:$branch,base:$base,diff:$diff,createdAt:$createdAt,updatedAt:$updatedAt}' \
-  | curl -sf -X POST -H 'Content-Type: application/json' --data-binary @- "$URL/api/sessions" >/dev/null
-rm -f /tmp/rb-diff.$$
+  | curl -sf -X POST -H 'Content-Type: application/json' --data-binary @- "$URL/api/sessions" >/dev/null || { echo "push failed — is the server reachable at $URL ?"; rm -f "$DIFF_TMP"; exit 1; }
+rm -f "$DIFF_TMP"
 
 REVIEW_URL="$URL/s/$ID"
 ( xdg-open "$REVIEW_URL" >/dev/null 2>&1 || explorer.exe "$REVIEW_URL" >/dev/null 2>&1 || open "$REVIEW_URL" >/dev/null 2>&1 ) &
