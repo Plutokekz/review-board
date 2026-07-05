@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'grep -qs \"autoReview: true\" .claude/review-board.local.md || exit 0; git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0; git diff --quiet HEAD && exit 0; echo \"review-board: changes detected — run /review to open a review.\"'"
+          }
+        ]
+      }
+    ]
+  }
+}
