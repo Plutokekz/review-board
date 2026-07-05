@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestServer(t *testing.T) *Server {
@@ -90,6 +91,61 @@ func TestSubmitAndPollReview(t *testing.T) {
 
 	if rec := do(t, srv, "POST", "/api/sessions/nope/review", review); rec.Code != 404 {
 		t.Fatalf("expected 404 review on unknown id, got %d", rec.Code)
+	}
+}
+
+func TestReviewWaitReturnsOnSubmit(t *testing.T) {
+	srv := newTestServer(t)
+	do(t, srv, "POST", "/api/sessions", `{"id":"w1","diff":"","updatedAt":"t0"}`)
+
+	type res struct {
+		code int
+		body string
+	}
+	done := make(chan res, 1)
+	go func() {
+		rec := do(t, srv, "GET", "/api/sessions/w1/review?wait=5", "")
+		done <- res{rec.Code, rec.Body.String()}
+	}()
+
+	time.Sleep(50 * time.Millisecond) // let the waiter block
+	if rec := do(t, srv, "POST", "/api/sessions/w1/review",
+		`{"summary":"ok","decision":"approve","comments":[],"submittedAt":"t1"}`); rec.Code != 200 {
+		t.Fatalf("submit code=%d", rec.Code)
+	}
+
+	select {
+	case r := <-done:
+		if r.code != 200 || !strings.Contains(r.body, `"status":"submitted"`) {
+			t.Fatalf("wait result = %d %s", r.code, r.body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("wait did not return after submit")
+	}
+}
+
+func TestReviewWaitReturnsImmediatelyWhenAlreadySubmitted(t *testing.T) {
+	srv := newTestServer(t)
+	do(t, srv, "POST", "/api/sessions", `{"id":"w2","diff":"","updatedAt":"t0"}`)
+	do(t, srv, "POST", "/api/sessions/w2/review",
+		`{"summary":"ok","decision":"approve","comments":[],"submittedAt":"t1"}`)
+
+	start := time.Now()
+	rec := do(t, srv, "GET", "/api/sessions/w2/review?wait=5", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"submitted"`) {
+		t.Fatalf("result = %d %s", rec.Code, rec.Body)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("already-submitted wait should return immediately")
+	}
+}
+
+func TestReviewWaitTimesOutToPending(t *testing.T) {
+	srv := newTestServer(t)
+	do(t, srv, "POST", "/api/sessions", `{"id":"w3","diff":"","updatedAt":"t0"}`)
+	rec := do(t, srv, "GET", "/api/sessions/w3/review?wait=1", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"pending"`) {
+		t.Fatalf("timeout result = %d %s", rec.Code, rec.Body)
 	}
 }
 
