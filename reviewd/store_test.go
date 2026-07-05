@@ -104,3 +104,19 @@ func TestStoreConcurrentPutGetList(t *testing.T) {
 		t.Fatal("expected session to still exist after concurrent access")
 	}
 }
+
+// TestStoreReviewCopyIsolation guards against the Session copy in Put/Get/List
+// being shallow with respect to the *Review pointer: mutating a Review (or its
+// Comments slice) obtained from one Get must not be visible through a later
+// Get of the same session.
+func TestStoreReviewCopyIsolation(t *testing.T) {
+	s, _ := NewStore(t.TempDir())
+	s.Put(&Session{ID: "x", UpdatedAt: "t0", Review: &Review{Summary: "orig", Comments: []Comment{{Body: "a"}}}})
+	a, _ := s.Get("x")
+	a.Review.Summary = "mutated"
+	a.Review.Comments[0].Body = "z"
+	b, _ := s.Get("x")
+	if b.Review.Summary != "orig" || b.Review.Comments[0].Body != "a" {
+		t.Fatalf("Get returned a Review aliased with a prior Get: %+v", b.Review)
+	}
+}

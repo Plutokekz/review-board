@@ -87,6 +87,22 @@ func (s *Store) path(id string) string {
 	return filepath.Join(s.dir, safeName(id)+".json")
 }
 
+// cloneSession returns a copy of s that shares no mutable state with it: the
+// Session value itself is copied, and if Review is set it (and its Comments
+// slice) are deep-copied too. Comment is a pure value struct, so copying the
+// slice fully isolates it. This is used by Put/Get/List so that callers can
+// never mutate a Review reachable from the store's internal map, or from a
+// Session returned by a previous call.
+func cloneSession(s *Session) *Session {
+	cp := *s
+	if s.Review != nil {
+		r := *s.Review
+		r.Comments = append([]Comment(nil), s.Review.Comments...)
+		cp.Review = &r
+	}
+	return &cp
+}
+
 // Put persists sess to disk and then stores a copy of it in memory. The
 // file write (via a temp file + rename) happens before the in-memory map
 // is touched, so a failure leaves the store's visible state unchanged.
@@ -105,11 +121,11 @@ func (s *Store) Put(sess *Session) error {
 		return err
 	}
 	if err := os.Rename(tmp, final); err != nil {
+		os.Remove(tmp) // best-effort cleanup of the orphaned temp file
 		return err
 	}
 
-	cp := *sess
-	s.m[sess.ID] = &cp
+	s.m[sess.ID] = cloneSession(sess)
 	return nil
 }
 
@@ -120,8 +136,7 @@ func (s *Store) Get(id string) (*Session, bool) {
 	if !ok {
 		return nil, false
 	}
-	cp := *sess
-	return &cp, true
+	return cloneSession(sess), true
 }
 
 func (s *Store) List() []*Session {
@@ -129,8 +144,7 @@ func (s *Store) List() []*Session {
 	defer s.mu.Unlock()
 	out := make([]*Session, 0, len(s.m))
 	for _, v := range s.m {
-		cp := *v
-		out = append(out, &cp)
+		out = append(out, cloneSession(v))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 	return out
