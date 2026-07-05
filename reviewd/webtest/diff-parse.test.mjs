@@ -15,3 +15,15 @@ test('parses files and +/- counts', () => {
 test('empty diff yields no files', () => {
   assert.deepEqual(parseDiffFiles(''), []);
 });
+
+// Guards against a bug where content lines that happen to start with
+// "---"/"+++" (e.g. a deleted SQL comment "-- drop table" or an added
+// "++counter" line) were mistaken for diff file headers and dropped
+// from the +/- counts.
+test('content lines starting with --/++ are not mistaken for headers', () => {
+  const diff =
+    'diff --git a/q.sql b/q.sql\n--- a/q.sql\n+++ b/q.sql\n@@ -1,1 +1,1 @@\n' +
+    '--- drop table\n+++counter\n';
+  const files = parseDiffFiles(diff);
+  assert.deepEqual(files, [{ file: 'q.sql', additions: 1, deletions: 1 }]);
+});

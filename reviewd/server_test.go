@@ -27,7 +27,7 @@ func do(t *testing.T, srv *Server, method, path, body string) *httptest.Response
 func TestPushGetListDelete(t *testing.T) {
 	srv := newTestServer(t)
 	push := `{"id":"s1","title":"T","repo":"/r","branch":"main","base":"HEAD",` +
-		`"diff":"diff --git a/x b/x\n+hello\n","createdAt":"t0","updatedAt":"t0"}`
+		`"diff":"diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -0,0 +1 @@\n+hello\n","createdAt":"t0","updatedAt":"t0"}`
 	if rec := do(t, srv, "POST", "/api/sessions", push); rec.Code != 200 {
 		t.Fatalf("push code=%d body=%s", rec.Code, rec.Body)
 	}
