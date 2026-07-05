@@ -21,11 +21,12 @@ PORT="${REVIEW_BOARD_PORT:-7654}"
 URL="http://127.0.0.1:$PORT"
 BASE="HEAD"          # override from --base
 NAME=""              # override from first positional arg
+GIT="${REVIEW_BOARD_GIT:-git}"   # override (e.g. /usr/bin/git) to dodge a shell alias/function named `git`
 
 # --- ensure repo + changes ---
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo"; exit 1; }
-git add -N -- :/ 2>/dev/null || true    # intent-to-add so NEW files show up in the diff
-if git diff --no-ext-diff --quiet "$BASE"; then echo "no changes vs $BASE — nothing to review"; exit 0; fi
+command "$GIT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo"; exit 1; }
+command "$GIT" add -N -- :/ 2>/dev/null || true    # intent-to-add so NEW files show up in the diff
+if command "$GIT" diff --no-ext-diff --quiet "$BASE"; then echo "no changes vs $BASE — nothing to review"; exit 0; fi
 
 # --- ensure server (build on first use, start if down) ---
 if [ ! -x "$BIN" ]; then
@@ -38,8 +39,8 @@ fi
 curl -sf "$URL/api/sessions" >/dev/null 2>&1 || { nohup "$BIN" --port "$PORT" >"$HOME/.cache/review-board/reviewd.log" 2>&1 & for i in 1 2 3 4 5; do sleep 0.4; curl -sf "$URL/api/sessions" >/dev/null 2>&1 && break; done; }
 
 # --- identity ---
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-BRANCH="$(git branch --show-current)"
+REPO_ROOT="$(command "$GIT" rev-parse --show-toplevel)"
+BRANCH="$(command "$GIT" branch --show-current)"
 ID="${NAME:-${CLAUDE_CODE_SESSION_ID:-$(uuidgen)}}"
 IDENC="$(jq -rn --arg s "$ID" '$s|@uri')"    # percent-encode id for use in URL paths
 TITLE="${NAME:-$(basename "$REPO_ROOT")} · ${BRANCH:-detached}"
@@ -47,7 +48,18 @@ TS="$(date -Iseconds)"
 
 # --- push (jq encodes the diff safely) ---
 DIFF_TMP="$(mktemp)"
-git diff --no-ext-diff --no-color "$BASE" > "$DIFF_TMP"
+command "$GIT" diff --no-ext-diff --no-color "$BASE" > "$DIFF_TMP"
+
+# Guard: a git wrapper/hook (rtk, difftastic, delta, or a `git` alias) can rewrite
+# `git diff` into a summary the reviewer UI cannot parse. Catch that here instead of
+# silently pushing a non-patch that renders as an empty review. A real unified diff
+# always has a `diff --git ` header per changed file.
+if [ -s "$DIFF_TMP" ] && ! grep -q '^diff --git ' "$DIFF_TMP"; then
+  echo "error: 'git diff' did not produce a unified patch (first line: $(head -1 "$DIFF_TMP"))." >&2
+  echo "A git wrapper/hook is likely rewriting its output. Re-run with" >&2
+  echo "  REVIEW_BOARD_GIT=/usr/bin/git   (or exclude 'git diff' from the wrapper)." >&2
+  rm -f "$DIFF_TMP"; exit 1
+fi
 jq -n --arg id "$ID" --arg title "$TITLE" --arg repo "$REPO_ROOT" \
       --arg branch "$BRANCH" --arg base "$BASE" --arg createdAt "$TS" --arg updatedAt "$TS" \
       --rawfile diff "$DIFF_TMP" \
