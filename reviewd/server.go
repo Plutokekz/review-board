@@ -17,6 +17,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions", s.handleList)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleGet)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDelete)
+	mux.HandleFunc("POST /api/sessions/{id}/review", s.handleSubmitReview)
+	mux.HandleFunc("GET /api/sessions/{id}/review", s.handleGetReview)
 	return mux
 }
 
@@ -92,4 +94,33 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleSubmitReview(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.store.Get(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var rev Review
+	if err := json.NewDecoder(r.Body).Decode(&rev); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	sess.Review = &rev
+	sess.Status = "submitted"
+	if err := s.store.Put(sess); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.store.Get(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": sess.Status, "review": sess.Review})
 }

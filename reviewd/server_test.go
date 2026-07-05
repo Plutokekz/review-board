@@ -64,3 +64,31 @@ func TestPushBadBodyAndUnknownId(t *testing.T) {
 		t.Fatalf("expected 404 unknown id, got %d", rec.Code)
 	}
 }
+
+func TestSubmitAndPollReview(t *testing.T) {
+	srv := newTestServer(t)
+	do(t, srv, "POST", "/api/sessions",
+		`{"id":"s2","title":"T","diff":"","updatedAt":"t0"}`)
+
+	// Before submission: pending, null review.
+	rec := do(t, srv, "GET", "/api/sessions/s2/review", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"pending"`) {
+		t.Fatalf("pre-poll = %d %s", rec.Code, rec.Body)
+	}
+
+	review := `{"summary":"looks ok","submittedAt":"t1","comments":[` +
+		`{"file":"x","side":"new","startLine":3,"endLine":5,"type":"request_change","body":"rename"}]}`
+	if rec := do(t, srv, "POST", "/api/sessions/s2/review", review); rec.Code != 200 {
+		t.Fatalf("submit code=%d body=%s", rec.Code, rec.Body)
+	}
+
+	rec = do(t, srv, "GET", "/api/sessions/s2/review", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"submitted"`) ||
+		!strings.Contains(rec.Body.String(), `"body":"rename"`) {
+		t.Fatalf("post-poll = %d %s", rec.Code, rec.Body)
+	}
+
+	if rec := do(t, srv, "POST", "/api/sessions/nope/review", review); rec.Code != 404 {
+		t.Fatalf("expected 404 review on unknown id, got %d", rec.Code)
+	}
+}
