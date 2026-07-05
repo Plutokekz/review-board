@@ -15,12 +15,17 @@ your requested changes.
   Review**; Claude applies the requested changes. Re-run `/review` to re-review.
 - `/review-server [start|stop|status]` — manage the shared daemon (auto-started by `/review`).
 
-## Settings — `.claude/review-board.local.md`
-```yaml
-serverUrl: http://localhost:7654   # shared server (may be remote later)
-base: HEAD                         # default diff base
-autoReview: false                  # opt-in: prompt for review when Claude stops with a nonempty diff
-```
+## Configuration
+
+- **Port** — set the `REVIEW_BOARD_PORT` environment variable (default `7654`). Both `/review` and `/review-server` talk to `http://127.0.0.1:$REVIEW_BOARD_PORT`.
+- **Diff base** — pass `--base <ref>` to `/review` (default `HEAD`), e.g. `/review --base main`.
+- **Auto-review prompt (opt-in)** — create `.claude/review-board.local.md` containing:
+  ```yaml
+  autoReview: true
+  ```
+  When present, the `Stop` hook prints a reminder to run `/review` after Claude finishes editing (and only when the repo has a nonempty diff). Off by default.
+
+> **Planned:** a `serverUrl` setting to point `/review` at a shared server running on another machine. Today the server runs locally on `REVIEW_BOARD_PORT`.
 
 ## How it works
 `/review` computes `git diff`, pushes it to `reviewd` (`POST /api/sessions`), opens the
