@@ -20,6 +20,7 @@ type Comment struct {
 
 type Review struct {
 	Summary     string    `json:"summary"`
+	Decision    string    `json:"decision"`
 	Comments    []Comment `json:"comments"`
 	SubmittedAt string    `json:"submittedAt"`
 }
