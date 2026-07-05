@@ -1,0 +1,66 @@
+package main
+
+import (
+	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewServer(store)
+}
+
+func do(t *testing.T, srv *Server, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestPushGetListDelete(t *testing.T) {
+	srv := newTestServer(t)
+	push := `{"id":"s1","title":"T","repo":"/r","branch":"main","base":"HEAD",` +
+		`"diff":"diff --git a/x b/x\n+hello\n","createdAt":"t0","updatedAt":"t0"}`
+	if rec := do(t, srv, "POST", "/api/sessions", push); rec.Code != 200 {
+		t.Fatalf("push code=%d body=%s", rec.Code, rec.Body)
+	}
+
+	rec := do(t, srv, "GET", "/api/sessions/s1", "")
+	if rec.Code != 200 {
+		t.Fatalf("get code=%d", rec.Code)
+	}
+	var sess Session
+	json.Unmarshal(rec.Body.Bytes(), &sess)
+	if sess.Status != "pending" || sess.Stats.Additions != 1 {
+		t.Fatalf("session = %+v", sess)
+	}
+
+	if rec := do(t, srv, "GET", "/api/sessions", ""); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"id":"s1"`) {
+		t.Fatalf("list code=%d body=%s", rec.Code, rec.Body)
+	}
+
+	if rec := do(t, srv, "DELETE", "/api/sessions/s1", ""); rec.Code != 200 {
+		t.Fatalf("delete code=%d", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/sessions/s1", ""); rec.Code != 404 {
+		t.Fatalf("expected 404 after delete, got %d", rec.Code)
+	}
+}
+
+func TestPushBadBodyAndUnknownId(t *testing.T) {
+	srv := newTestServer(t)
+	if rec := do(t, srv, "POST", "/api/sessions", `{"title":"no id"}`); rec.Code != 400 {
+		t.Fatalf("expected 400 for missing id, got %d", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/sessions/nope", ""); rec.Code != 404 {
+		t.Fatalf("expected 404 unknown id, got %d", rec.Code)
+	}
+}
