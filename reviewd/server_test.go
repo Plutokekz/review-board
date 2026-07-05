@@ -166,3 +166,29 @@ func TestStaticServing(t *testing.T) {
 		t.Fatalf("mjs: code=%d ct=%q", rec.Code, rec.Header().Get("Content-Type"))
 	}
 }
+
+func TestSetStatus(t *testing.T) {
+	srv := newTestServer(t)
+	do(t, srv, "POST", "/api/sessions", `{"id":"st1","diff":"","updatedAt":"t0"}`)
+
+	if rec := do(t, srv, "POST", "/api/sessions/st1/status", `{"status":"applying"}`); rec.Code != 200 {
+		t.Fatalf("set applying code=%d body=%s", rec.Code, rec.Body)
+	}
+	rec := do(t, srv, "GET", "/api/sessions/st1", "")
+	if !strings.Contains(rec.Body.String(), `"status":"applying"`) {
+		t.Fatalf("status not applied: %s", rec.Body)
+	}
+
+	if rec := do(t, srv, "POST", "/api/sessions/st1/status", `{"status":"applied"}`); rec.Code != 200 {
+		t.Fatalf("set applied code=%d", rec.Code)
+	}
+
+	// invalid status value is rejected
+	if rec := do(t, srv, "POST", "/api/sessions/st1/status", `{"status":"bogus"}`); rec.Code != 400 {
+		t.Fatalf("expected 400 for bogus status, got %d", rec.Code)
+	}
+	// unknown id is 404
+	if rec := do(t, srv, "POST", "/api/sessions/nope/status", `{"status":"applying"}`); rec.Code != 404 {
+		t.Fatalf("expected 404 for unknown id, got %d", rec.Code)
+	}
+}

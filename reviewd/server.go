@@ -29,6 +29,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDelete)
 	mux.HandleFunc("POST /api/sessions/{id}/review", s.handleSubmitReview)
 	mux.HandleFunc("GET /api/sessions/{id}/review", s.handleGetReview)
+	mux.HandleFunc("POST /api/sessions/{id}/status", s.handleSetStatus)
 	mux.HandleFunc("GET /s/{id}", s.handleStatic)
 	mux.HandleFunc("GET /", s.handleStatic)
 	return mux
@@ -150,6 +151,31 @@ func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": sess.Status, "review": sess.Review})
+}
+
+func (s *Server) handleSetStatus(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.store.Get(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if body.Status != "applying" && body.Status != "applied" {
+		http.Error(w, "status must be applying or applied", http.StatusBadRequest)
+		return
+	}
+	sess.Status = body.Status
+	if err := s.store.Put(sess); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // parseWait clamps the ?wait= seconds to [0,600]; 0 (or invalid) means do not block.
