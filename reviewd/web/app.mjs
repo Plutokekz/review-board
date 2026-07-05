@@ -15,7 +15,7 @@ function route() {
   const p = m ? renderReview(decodeURIComponent(m[1])) : renderDashboard();
   Promise.resolve(p).catch((err) => {
     document.querySelector('main').innerHTML =
-      `<p>⚠️ Could not load: ${escapeHtml(String(err && err.message || err))}. Try reloading.</p>`;
+      `<p>Could not load: ${escapeHtml(String(err && err.message || err))}. Try reloading.</p>`;
   });
 }
 
@@ -38,8 +38,35 @@ async function renderDashboard() {
 }
 
 let annotations = [];
-let pendingAnchor = null;
-let openBox = null;
+let sel = null;      // active selection: { file, side, anchorLine, anchorRow, current }
+let openBox = null;  // holder <tr> of the currently-open (unsaved) comment box
+
+function rangeLabel(a) {
+  return a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
+}
+
+function clearSelection() {
+  document.querySelectorAll('#diff tr.rb-selected').forEach((r) => r.classList.remove('rb-selected'));
+  if (openBox) { openBox.remove(); openBox = null; }
+  sel = null;
+}
+
+// Highlight the code rows anchorRow..targetRow (inclusive) within one file.
+function highlightRange(anchorRow, targetRow) {
+  document.querySelectorAll('#diff tr.rb-selected').forEach((r) => r.classList.remove('rb-selected'));
+  const wrapper = anchorRow.closest('.d2h-file-wrapper');
+  if (!wrapper || targetRow.closest('.d2h-file-wrapper') !== wrapper) {
+    anchorRow.classList.add('rb-selected');
+    return;
+  }
+  const rows = Array.from(wrapper.querySelectorAll('tr'));
+  let a = rows.indexOf(anchorRow), b = rows.indexOf(targetRow);
+  if (a > b) [a, b] = [b, a];
+  for (let i = a; i <= b; i++) {
+    const r = rows[i];
+    if (r.querySelector('.d2h-code-line') || r.querySelector('.d2h-code-side-line')) r.classList.add('rb-selected');
+  }
+}
 
 async function renderReview(id) {
   $('#dashboard').classList.add('hidden');
@@ -112,51 +139,56 @@ function wireDiff() {
     tr.addEventListener('click', (ev) => {
       const meta = rowMeta(tr);
       if (!meta) return;
-      const anchor = anchorFromRow(meta);
-      // Shift-click a second line in the same file+side extends into a range.
-      if (ev.shiftKey && pendingAnchor &&
-          pendingAnchor.file === anchor.file && pendingAnchor.side === anchor.side) {
-        openCommentBox(tr, mergeRange(pendingAnchor, anchor));
-        pendingAnchor = null;
-      } else {
-        pendingAnchor = anchor;
-        openCommentBox(tr, anchor);
+      // Shift-click extends the current selection; the box stays anchored where it started.
+      if (ev.shiftKey && sel && openBox && sel.file === meta.file && sel.side === meta.side) {
+        sel.current = mergeRange(
+          anchorFromRow({ file: sel.file, side: sel.side, line: sel.anchorLine }),
+          anchorFromRow(meta),
+        );
+        highlightRange(sel.anchorRow, tr);
+        const loc = openBox.querySelector('.rb-loc');
+        if (loc) loc.textContent = `${sel.current.file}:${rangeLabel(sel.current)} (${sel.current.side})`;
+        return;
       }
+      // Plain click starts a fresh single-line selection + comment box.
+      clearSelection();
+      const anchor = anchorFromRow(meta);
+      sel = { file: meta.file, side: meta.side, anchorLine: meta.line, anchorRow: tr, current: anchor };
+      tr.classList.add('rb-selected');
+      openCommentBox(tr, anchor);
     });
   });
 }
 
 function openCommentBox(tr, anchor) {
-  if (openBox) { openBox.remove(); openBox = null; } // one open unsaved box at a time
-  const range = anchor.startLine === anchor.endLine
-    ? `${anchor.startLine}` : `${anchor.startLine}-${anchor.endLine}`;
   const box = document.createElement('div');
   box.className = 'comment-box';
   box.innerHTML = `
-    <div><code>${escapeHtml(anchor.file)}:${range}</code> (${anchor.side}) — shift-click another line for a range</div>
-    <label><input type="radio" name="t" value="request_change" checked> 🔴 Request change</label>
-    <label><input type="radio" name="t" value="comment"> 💬 Comment</label>
-    <textarea placeholder="Your note…"></textarea>
-    <button class="save primary">Save</button>`;
-  // Insert as a valid full-width table row (not a bare <div> sibling of <tr>).
+    <div class="rb-head"><code class="rb-loc">${escapeHtml(anchor.file)}:${rangeLabel(anchor)} (${anchor.side})</code>
+      <span class="rb-hint">shift-click another line to select a range</span></div>
+    <textarea placeholder="Leave a comment"></textarea>
+    <div class="rb-actions"><button class="save primary">Comment</button><button class="cancel">Cancel</button></div>`;
+  // Insert as a valid full-width table row, anchored below the FIRST-clicked line
+  // so the box never jumps as the selection grows.
   const holderRow = document.createElement('tr');
   const cell = document.createElement('td');
   cell.colSpan = 99;
   cell.appendChild(box);
   holderRow.appendChild(cell);
   tr.after(holderRow);
-  openBox = holderRow; // track the ROW so removal takes the whole row
+  openBox = holderRow;
+  box.querySelector('textarea').focus();
+  box.querySelector('.cancel').onclick = () => clearSelection();
   box.querySelector('.save').onclick = () => {
-    annotations.push({
-      anchor,
-      type: box.querySelector('input[name=t]:checked').value,
-      body: box.querySelector('textarea').value,
-    });
-    box.querySelector('textarea').disabled = true;
-    const btn = box.querySelector('.save');
-    btn.textContent = 'Saved ✓';
-    btn.disabled = true;
-    openBox = null; // saved box stays in the DOM; it is no longer the "open unsaved" one
+    const ta = box.querySelector('textarea');
+    const body = ta.value.trim();
+    if (!body) { ta.focus(); return; }
+    annotations.push({ anchor: sel ? sel.current : anchor, type: 'comment', body });
+    document.querySelectorAll('#diff tr.rb-selected').forEach((r) => r.classList.remove('rb-selected'));
+    ta.disabled = true;
+    box.querySelector('.rb-actions').innerHTML = '<span class="rb-saved">Comment added</span>';
+    openBox = null;   // saved box stays in the DOM; a new click starts a fresh selection
+    sel = null;
   };
 }
 
@@ -168,7 +200,7 @@ async function finish(id) {
     body: JSON.stringify(payload),
   });
   document.querySelector('main').innerHTML =
-    '<p>✅ Review submitted. You can close this tab — Claude is applying your changes.</p>';
+    '<p>Review submitted. You can close this tab — Claude is applying your changes.</p>';
 }
 
 function escapeHtml(s) {

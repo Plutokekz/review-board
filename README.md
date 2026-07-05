@@ -11,7 +11,7 @@ your requested changes.
 
 ## Usage
 - `/review [name] [--base <ref>]` — review the current changes. Opens the diff in your
-  browser; annotate lines/ranges with 🔴 Request change or 💬 Comment; click **Finish
+  browser; annotate lines/ranges with comments; click **Finish
   Review**; Claude applies the requested changes. Re-run `/review` to re-review.
 - `/review-server [start|stop|status]` — manage the shared daemon (auto-started by `/review`).
 

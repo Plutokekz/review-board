@@ -79,11 +79,11 @@ If it never becomes `submitted`, tell the user the submission is durable — the
 
 ## 3. Apply the review
 
-From the submitted JSON, work through `comments`:
-- **`type: "request_change"`** — make the edit at `file` lines `startLine`–`endLine`
-  (the `side` tells you whether the anchor is on the new or old version of the file).
-- **`type: "comment"`** — treat as a question/FYI: address it if it implies a change,
-  otherwise answer it in your summary.
+From the submitted JSON, work through each entry in `comments` (all are plain review
+comments, GitHub-style — you read each one and act on it):
+- Locate `file` at lines `startLine`–`endLine` (the `side` tells you whether the anchor is
+  on the new or old version of the file), read `body`, and do what it asks — make the change
+  it requests, or if it's a question, answer it and make any change it implies.
 - Honour the overall `summary` as top-level guidance.
 
 After applying, give the user a concise list of what you changed per comment, then offer to
