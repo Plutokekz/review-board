@@ -81,7 +81,7 @@ function setActive(which) {
 }
 
 function renderDiff(diff, format) {
-  $('#diff').innerHTML = Diff2Html.html(diff, { drawFileList: false, matching: 'lines', outputFormat: format });
+  $('#diff').innerHTML = Diff2Html.html(diff, { drawFileList: false, matching: 'lines', outputFormat: format, colorScheme: 'auto' });
   wireDiff();
 }
 
