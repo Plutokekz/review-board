@@ -1,9 +1,16 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
+	"mime"
 	"net/http"
+	"path/filepath"
+	"strings"
 )
+
+//go:embed all:web
+var webFS embed.FS
 
 type Server struct {
 	store *Store
@@ -19,6 +26,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDelete)
 	mux.HandleFunc("POST /api/sessions/{id}/review", s.handleSubmitReview)
 	mux.HandleFunc("GET /api/sessions/{id}/review", s.handleGetReview)
+	mux.HandleFunc("GET /s/{id}", s.handleStatic)
+	mux.HandleFunc("GET /", s.handleStatic)
 	return mux
 }
 
@@ -123,4 +132,24 @@ func (s *Server) handleGetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": sess.Status, "review": sess.Review})
+}
+
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Path
+	if p == "/" || strings.HasPrefix(p, "/s/") {
+		p = "/index.html"
+	}
+	data, err := webFS.ReadFile("web" + p)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	ct := mime.TypeByExtension(filepath.Ext(p))
+	if strings.HasSuffix(p, ".mjs") || strings.HasSuffix(p, ".js") {
+		ct = "text/javascript; charset=utf-8"
+	}
+	if ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	_, _ = w.Write(data)
 }

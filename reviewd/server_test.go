@@ -92,3 +92,21 @@ func TestSubmitAndPollReview(t *testing.T) {
 		t.Fatalf("expected 404 review on unknown id, got %d", rec.Code)
 	}
 }
+
+func TestStaticServing(t *testing.T) {
+	srv := newTestServer(t)
+
+	rec := do(t, srv, "GET", "/", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "review-board") {
+		t.Fatalf("index: code=%d", rec.Code)
+	}
+	// SPA route also serves index.
+	if rec := do(t, srv, "GET", "/s/anything", ""); rec.Code != 200 {
+		t.Fatalf("spa route code=%d", rec.Code)
+	}
+	// JS modules must be served as JavaScript so the browser executes them.
+	rec = do(t, srv, "GET", "/lib/anchor.mjs", "")
+	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Type"), "javascript") {
+		t.Fatalf("mjs: code=%d ct=%q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+}
