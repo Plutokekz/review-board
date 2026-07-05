@@ -1,0 +1,18 @@
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; }
+header { padding: 12px 20px; border-bottom: 1px solid #8884; display: flex; gap: 12px; align-items: baseline; }
+header h1 { font-size: 16px; margin: 0; }
+main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+a { color: inherit; }
+.session-row { display: flex; gap: 12px; padding: 12px; border: 1px solid #8884; border-radius: 8px; margin-bottom: 8px; text-decoration: none; }
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid #8886; }
+.add { color: #2da44e; } .del { color: #cf222e; }
+.d2h-code-line { cursor: pointer; }
+.d2h-code-line.rb-selected { background: #6cf3 !important; }
+.comment-box { border: 1px solid #8886; border-radius: 8px; padding: 10px; margin: 6px 0; }
+.comment-box textarea { width: 100%; min-height: 54px; font: inherit; }
+.toolbar { position: sticky; top: 0; background: Canvas; padding: 10px 0; display: flex; gap: 10px; align-items: center; z-index: 5; }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid #8886; cursor: pointer; background: Canvas; }
+button.primary { background: #2da44e; color: white; border-color: #2da44e; }
+.hidden { display: none; }
