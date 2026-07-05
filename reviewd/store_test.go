@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 func TestStorePutGetPersist(t *testing.T) {
 	dir := t.TempDir()
@@ -41,5 +44,63 @@ func TestStoreListOrderAndDelete(t *testing.T) {
 	}
 	if _, ok := s.Get("a"); ok {
 		t.Fatal("expected a deleted")
+	}
+}
+
+// TestStoreConcurrentPutGetList guards against pointer aliasing between the
+// store's internal map and values returned to (or passed in by) callers. It
+// hammers Put/Get/List concurrently on the same session id from many
+// goroutines; run with -race to confirm no data race and no panic.
+func TestStoreConcurrentPutGetList(t *testing.T) {
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const id = "concurrent"
+	const iterations = 50
+
+	var wg sync.WaitGroup
+	for i := 0; i < iterations; i++ {
+		wg.Add(3)
+
+		go func(n int) {
+			defer wg.Done()
+			sess := &Session{
+				ID:        id,
+				Title:     "T",
+				UpdatedAt: "2026-07-05T10:00:00Z",
+				Review:    &Review{Summary: "s"},
+			}
+			if err := s.Put(sess); err != nil {
+				t.Errorf("Put: %v", err)
+			}
+			// Mutate the caller's copy after handing it to Put; this must
+			// never be visible to (or race with) the store's own state.
+			sess.Title = "mutated"
+		}(i)
+
+		go func() {
+			defer wg.Done()
+			if got, ok := s.Get(id); ok {
+				// Mutate the returned session; must not race with Put's
+				// internal marshal/copy or other Get/List calls.
+				got.Title = "also mutated"
+				got.Status = "changed"
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			for _, sess := range s.List() {
+				sess.Title = "list mutated"
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if _, ok := s.Get(id); !ok {
+		t.Fatal("expected session to still exist after concurrent access")
 	}
 }

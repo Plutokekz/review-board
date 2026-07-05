@@ -83,27 +83,45 @@ func NewStore(dir string) (*Store, error) {
 	return s, nil
 }
 
+func (s *Store) path(id string) string {
+	return filepath.Join(s.dir, safeName(id)+".json")
+}
+
+// Put persists sess to disk and then stores a copy of it in memory. The
+// file write (via a temp file + rename) happens before the in-memory map
+// is touched, so a failure leaves the store's visible state unchanged.
 func (s *Store) Put(sess *Session) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.m[sess.ID] = sess
 	b, err := json.MarshalIndent(sess, "", "  ")
 	if err != nil {
 		return err
 	}
-	final := filepath.Join(s.dir, safeName(sess.ID)+".json")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	final := s.path(sess.ID)
 	tmp := final + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, final)
+	if err := os.Rename(tmp, final); err != nil {
+		return err
+	}
+
+	cp := *sess
+	s.m[sess.ID] = &cp
+	return nil
 }
 
 func (s *Store) Get(id string) (*Session, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.m[id]
-	return sess, ok
+	if !ok {
+		return nil, false
+	}
+	cp := *sess
+	return &cp, true
 }
 
 func (s *Store) List() []*Session {
@@ -111,19 +129,23 @@ func (s *Store) List() []*Session {
 	defer s.mu.Unlock()
 	out := make([]*Session, 0, len(s.m))
 	for _, v := range s.m {
-		out = append(out, v)
+		cp := *v
+		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 	return out
 }
 
+// Delete removes the persisted file before mutating memory. A missing file
+// is treated as success; a real removal error leaves the in-memory map
+// unchanged.
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.m, id)
-	err := os.Remove(filepath.Join(s.dir, safeName(id)+".json"))
-	if os.IsNotExist(err) {
-		return nil
+
+	if err := os.Remove(s.path(id)); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	return err
+	delete(s.m, id)
+	return nil
 }
