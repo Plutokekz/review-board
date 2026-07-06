@@ -91,6 +91,13 @@ await sleep(60);
 assert.equal(await evalJS("document.documentElement.style.colorScheme"), 'dark', 'second toggle -> dark');
 assert.equal(await evalJS(scheme), 'd2h-dark-color-scheme', 'diff should be dark');
 
+// 5) approve/request-changes buttons render; approving shows the live status panel
+assert.equal(await evalJS("!!document.getElementById('approve')"), true, 'approve button missing');
+assert.equal(await evalJS("!!document.getElementById('request')"), true, 'request-changes button missing');
+await evalJS("document.getElementById('approve').click()");
+await sleep(300);
+assert.equal(await evalJS("!!document.querySelector('.status-panel')"), true, 'status panel should appear after submit');
+
 console.log('UI SMOKE: PASS');
 ws.close();
 process.exit(0);
