@@ -48,18 +48,30 @@ async function renderDashboard() {
   el.innerHTML = sessions.length === 0
     ? '<p>No pending reviews. Run <code>/review</code> in a repo.</p>'
     : sessions.map((s) => `
-      <a class="session-row" href="/s/${encodeURIComponent(s.id)}">
-        <strong>${escapeHtml(s.title || s.id)}</strong>
-        <span class="badge">${s.status}</span>
-        <span class="add">+${s.stats.additions}</span>
-        <span class="del">-${s.stats.deletions}</span>
-        <span class="badge">${s.stats.files} files</span>
-      </a>`).join('');
+      <div class="session-row">
+        <a class="session-link" href="/s/${encodeURIComponent(s.id)}">
+          <strong>${escapeHtml(s.title || s.id)}</strong>
+          <span class="badge">${escapeHtml(s.status)}</span>
+          <span class="add">+${s.stats.additions}</span>
+          <span class="del">-${s.stats.deletions}</span>
+          <span class="badge">${s.stats.files} files</span>
+        </a>
+        <button class="dismiss" data-id="${escapeHtml(s.id)}" title="Dismiss">&times;</button>
+      </div>`).join('');
+  el.querySelectorAll('.dismiss').forEach((b) => {
+    b.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      await api(`/api/sessions/${encodeURIComponent(b.dataset.id)}`, { method: 'DELETE' });
+      renderDashboard();
+    });
+  });
 }
 
 let annotations = [];
 let sel = null;      // active selection: { file, side, anchorLine, anchorRow, current }
 let openBox = null;  // holder <tr> of the currently-open (unsaved) comment box
+let loadedUpdatedAt = null;
 
 function rangeLabel(a) {
   return a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
@@ -96,6 +108,7 @@ async function renderReview(id) {
   sel = null;
   openBox = null;
   const sess = await api(`/api/sessions/${encodeURIComponent(id)}`);
+  loadedUpdatedAt = sess.updatedAt;
   $('#subtitle').textContent = `${sess.title} — ${sess.branch}`;
 
   // Our own changed-files summary (uses parseDiffFiles; diff2html's own list is off).
@@ -109,7 +122,8 @@ async function renderReview(id) {
       <button id="split">Side-by-side</button>
       <button id="refresh">Refresh</button>
       <span style="flex:1"></span>
-      <button id="finish" class="primary">Finish Review</button>
+      <button id="approve">Approve</button>
+      <button id="request" class="primary">Request changes</button>
     </div>
     <div id="files">${filesBar}</div>
     <textarea id="summary" placeholder="Overall summary (optional)"></textarea>
@@ -119,7 +133,8 @@ async function renderReview(id) {
   $('#refresh').onclick = () => renderReview(id);
   $('#unified').onclick = () => { setActive('unified'); renderDiff(sess.diff, 'line-by-line'); };
   $('#split').onclick = () => { setActive('split'); renderDiff(sess.diff, 'side-by-side'); };
-  $('#finish').onclick = () => finish(id);
+  $('#approve').onclick = () => finish(id, 'approve');
+  $('#request').onclick = () => finish(id, 'request-changes');
 }
 
 function setActive(which) {
@@ -212,15 +227,46 @@ function openCommentBox(tr, anchor) {
   };
 }
 
-async function finish(id) {
-  const nowIso = new Date().toISOString();
-  const payload = buildReviewPayload(annotations, $('#summary').value, nowIso);
+const STATUS_LABEL = {
+  submitted: 'Sent to Claude — waiting for it to start.',
+  applying: 'Claude is applying your changes.',
+  applied: 'Done. You can close this tab.',
+};
+
+async function finish(id, decision) {
+  const hasContent = annotations.length > 0 || $('#summary').value.trim() !== '';
+  if (decision === 'request-changes' && !hasContent) {
+    const ta = $('#summary');
+    ta.placeholder = 'Add a comment or a summary before requesting changes.';
+    ta.focus();
+    return;
+  }
+  const payload = buildReviewPayload(annotations, $('#summary').value, new Date().toISOString(), decision);
   await api(`/api/sessions/${encodeURIComponent(id)}/review`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  document.querySelector('main').innerHTML =
-    '<p>Review submitted. You can close this tab — Claude is applying your changes.</p>';
+  watchStatus(id);
+}
+
+// After submit, poll the session (browser polling costs no tokens) and reflect
+// live status. A re-review re-push flips status back to `pending` with a fresh
+// updatedAt — when we see that, reload into the new diff.
+function watchStatus(id) {
+  const paint = (status) => {
+    $('#review').innerHTML = `<div class="status-panel"><p>${escapeHtml(STATUS_LABEL[status] || status)}</p></div>`;
+  };
+  paint('submitted');
+  const h = setInterval(async () => {
+    let s;
+    try { s = await api(`/api/sessions/${encodeURIComponent(id)}`); } catch { return; }
+    if (s.status === 'pending' && s.updatedAt !== loadedUpdatedAt) {
+      clearInterval(h);
+      renderReview(id);
+      return;
+    }
+    paint(s.status);
+  }, 2000);
 }
 
 function escapeHtml(s) {
