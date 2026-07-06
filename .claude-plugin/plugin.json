@@ -1,6 +1,6 @@
 {
   "name": "review-board",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "GitHub-style multi-session code review: annotate git diffs in the browser; Claude applies the requested changes.",
   "author": { "name": "Lukas Mahr", "email": "lukas@yousuckatprogramming.de" }
 }
