@@ -72,6 +72,7 @@ let annotations = [];
 let sel = null;      // active selection: { file, side, anchorLine, anchorRow, current }
 let openBox = null;  // holder <tr> of the currently-open (unsaved) comment box
 let loadedUpdatedAt = null;
+let statusTimer = null;
 
 function rangeLabel(a) {
   return a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
@@ -101,6 +102,7 @@ function highlightRange(anchorRow, targetRow) {
 }
 
 async function renderReview(id) {
+  if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
   $('#dashboard').classList.add('hidden');
   const el = $('#review');
   el.classList.remove('hidden');
@@ -257,11 +259,11 @@ function watchStatus(id) {
     $('#review').innerHTML = `<div class="status-panel"><p>${escapeHtml(STATUS_LABEL[status] || status)}</p></div>`;
   };
   paint('submitted');
-  const h = setInterval(async () => {
+  statusTimer = setInterval(async () => {
     let s;
     try { s = await api(`/api/sessions/${encodeURIComponent(id)}`); } catch { return; }
     if (s.status === 'pending' && s.updatedAt !== loadedUpdatedAt) {
-      clearInterval(h);
+      clearInterval(statusTimer); statusTimer = null;
       renderReview(id);
       return;
     }
