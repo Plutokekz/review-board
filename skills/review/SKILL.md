@@ -75,35 +75,53 @@ echo "SESSION_ID=$ID"
 
 Tell the user the review URL and that you are waiting for them to click **Finish Review**.
 
-## 2. Wait for the submitted review
+## 2. Wait for the review — this auto-continues
 
-Poll every ~3s for up to ~20 minutes (400 iterations). Substitute the `SESSION_ID`
-printed above:
+Run this as a **background** command (set `run_in_background: true`). It blocks on
+the server with no token cost and returns the moment the reviewer clicks Approve or
+Request changes. Substitute the `SESSION_ID` printed above:
 
 ```bash
 URL="http://127.0.0.1:${REVIEW_BOARD_PORT:-7654}"
 ID="<SESSION_ID>"
-IDENC="$(jq -rn --arg s "$ID" '$s|@uri')"    # percent-encode id for use in URL paths
-for i in $(seq 1 400); do
-  STATUS="$(curl -sf "$URL/api/sessions/$IDENC/review" | jq -r '.status')"
-  [ "$STATUS" = "submitted" ] && break
-  sleep 3
-done
-curl -sf "$URL/api/sessions/$IDENC/review" | jq .
+IDENC="$(jq -rn --arg s "$ID" '$s|@uri')"    # percent-encode id for URL paths
+curl -sf --max-time 620 "$URL/api/sessions/$IDENC/review?wait=600"
 ```
 
-If it never becomes `submitted`, tell the user the submission is durable — they can re-run
-`/review` later to pick it up — and stop.
+When the command exits you are re-invoked automatically with its output (the review
+JSON). Then:
+- If `.status` is `submitted` → go to Phase 3 using that JSON.
+- If it timed out (output empty or `.status` still `pending`) → re-run the **same
+  background command** once more. After two timeouts (~20 min) stop and tell the user
+  the submission is durable — they can re-run `/review` later to pick it up.
 
 ## 3. Apply the review
 
-From the submitted JSON, work through each entry in `comments` (all are plain review
-comments, GitHub-style — you read each one and act on it):
-- Locate `file` at lines `startLine`–`endLine` (the `side` tells you whether the anchor is
-  on the new or old version of the file), read `body`, and do what it asks — make the change
-  it requests, or if it's a question, answer it and make any change it implies.
-- Honour the overall `summary` as top-level guidance.
+First tell the reviewer's browser tab you have started (so it shows "Claude is
+applying your changes"):
 
-After applying, give the user a concise list of what you changed per comment, then offer to
-**re-review**: re-running `/review` re-pushes the updated diff to the same id so they can
-check your work.
+```bash
+curl -sf -X POST -H 'Content-Type: application/json' -d '{"status":"applying"}' \
+  "$URL/api/sessions/$IDENC/status" >/dev/null
+```
+
+Read `.review.decision` from the submitted JSON:
+- **`approve`** with no `comments` → there is nothing to change. Skip editing.
+- otherwise (**`request-changes`**) → work through each entry in `.review.comments`
+  (all are plain review comments, GitHub-style):
+  - Locate `file` at lines `startLine`–`endLine` (the `side` tells you whether the
+    anchor is on the new or old version of the file), read `body`, and do what it
+    asks — make the change it requests, or if it is a question, answer it and make any
+    change it implies.
+  - Honour the overall `summary` as top-level guidance.
+
+When finished, mark it applied (updates the browser tab to "Done"):
+
+```bash
+curl -sf -X POST -H 'Content-Type: application/json' -d '{"status":"applied"}' \
+  "$URL/api/sessions/$IDENC/status" >/dev/null
+```
+
+Then give the user a concise list of what you changed per comment (or, for an
+approve with no comments, say it was approved with no changes requested), and offer
+to **re-review**: re-running `/review` re-pushes the updated diff to the same id.
